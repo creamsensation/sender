@@ -36,7 +36,9 @@ type Sender struct {
 }
 
 func New() *Sender {
-	return &Sender{}
+	return &Sender{
+		StatusCode: http.StatusOK,
+	}
 }
 
 func (s *Sender) Header() http.Header {

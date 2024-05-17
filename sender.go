@@ -2,6 +2,7 @@ package sender
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,12 +13,15 @@ import (
 )
 
 type Send interface {
+	Status(statusCode int) Send
+}
+
+type ExtendableSend interface {
 	Header() http.Header
-	Status(StatusCode int) Send
 	Error(e any) error
 	Json(value any) error
 	Html(value string) error
-	Xml(value string) error
+	Xml(value any) error
 	Text(value string) error
 	Bool(value bool) error
 	Redirect(url string) error
@@ -33,11 +37,21 @@ type Sender struct {
 	request     *http.Request
 	response    http.ResponseWriter
 	auth        auth.Manager
+	write       *bool
 }
 
-func New() *Sender {
+func New(write ...*bool) *Sender {
+	var w *bool
+	if len(write) == 0 {
+		w = new(bool)
+		*w = true
+	}
+	if len(write) > 0 {
+		w = write[0]
+	}
 	return &Sender{
 		StatusCode: http.StatusOK,
+		write:      w,
 	}
 }
 
@@ -45,12 +59,18 @@ func (s *Sender) Header() http.Header {
 	return s.response.Header()
 }
 
-func (s *Sender) Status(StatusCode int) Send {
-	s.StatusCode = StatusCode
+func (s *Sender) Status(statusCode int) Send {
+	if !*s.write {
+		return s
+	}
+	s.StatusCode = statusCode
 	return s
 }
 
 func (s *Sender) Error(e any) error {
+	if !*s.write {
+		return nil
+	}
 	var err error
 	switch v := e.(type) {
 	case nil:
@@ -62,10 +82,9 @@ func (s *Sender) Error(e any) error {
 	default:
 		err = errors.New(fmt.Sprintf("%v", e))
 	}
-	bytes, err := json.Marshal(Error{Error: err.Error()})
-	s.Bytes = bytes
+	s.Bytes = []byte(err.Error())
 	s.DataType = dataType.Error
-	s.ContentType = contentType.Json
+	s.ContentType = contentType.Text
 	if s.StatusCode == http.StatusOK {
 		s.StatusCode = http.StatusBadRequest
 	}
@@ -73,6 +92,9 @@ func (s *Sender) Error(e any) error {
 }
 
 func (s *Sender) Json(value any) error {
+	if !*s.write {
+		return nil
+	}
 	bytes, err := json.Marshal(Json{Result: value})
 	s.Bytes = bytes
 	s.DataType = dataType.Json
@@ -81,14 +103,20 @@ func (s *Sender) Json(value any) error {
 }
 
 func (s *Sender) Html(value string) error {
+	if !*s.write {
+		return nil
+	}
 	s.Bytes = []byte(value)
 	s.DataType = dataType.Html
 	s.ContentType = contentType.Html
 	return nil
 }
 
-func (s *Sender) Xml(value string) error {
-	bytes, err := json.Marshal(Json{Result: value})
+func (s *Sender) Xml(value any) error {
+	if !*s.write {
+		return nil
+	}
+	bytes, err := xml.Marshal(value)
 	s.Bytes = bytes
 	s.DataType = dataType.Xml
 	s.ContentType = contentType.Xml
@@ -96,14 +124,19 @@ func (s *Sender) Xml(value string) error {
 }
 
 func (s *Sender) Text(value string) error {
-	bytes, err := json.Marshal(Json{Result: value})
-	s.Bytes = bytes
+	if !*s.write {
+		return nil
+	}
+	s.Bytes = []byte(value)
 	s.DataType = dataType.Text
-	s.ContentType = contentType.Json
-	return err
+	s.ContentType = contentType.Text
+	return nil
 }
 
 func (s *Sender) Bool(value bool) error {
+	if !*s.write {
+		return nil
+	}
 	bytes, err := json.Marshal(Json{Result: value})
 	s.Bytes = bytes
 	s.DataType = dataType.Bool
@@ -112,12 +145,18 @@ func (s *Sender) Bool(value bool) error {
 }
 
 func (s *Sender) Redirect(url string) error {
+	if !*s.write {
+		return nil
+	}
 	s.Value = url
 	s.DataType = dataType.Redirect
 	return nil
 }
 
 func (s *Sender) File(name string, bytes []byte) error {
+	if !*s.write {
+		return nil
+	}
 	s.Value = name
 	s.Bytes = bytes
 	s.DataType = dataType.Stream
